@@ -33,9 +33,10 @@ O primeiro recorte do projeto deve ser pequeno e util:
 
 ## Estado atual
 
-Dia 2 iniciado e com arquitetura minima executavel:
+Dia 3 iniciado sobre a base estavel do Dia 2:
 
-- `api` sobe com FastAPI e expone `/` e `/health`
+- `api` sobe com FastAPI e expone `/`, `/health`, `POST /services`, `GET /services` e `GET /services/{id}`
+- `services` usa armazenamento em memoria por enquanto para focar no contrato REST antes da persistencia do Dia 4
 - `postgres` e `redis` sobem com healthchecks proprios
 - `worker` valida conectividade com `postgres` e `redis` e grava heartbeat
 - `docker-compose.yml` publica as portas do host e conecta tudo pela rede interna padrao
@@ -64,7 +65,7 @@ Depois disso:
 - Healthcheck: `http://localhost:8000/health`
 - Docs do FastAPI: `http://localhost:8000/docs`
 
-## Como validar o Dia 2
+## Como validar o Dia 3
 
 Use estes comandos para fechar a verificacao objetiva da infraestrutura:
 
@@ -96,12 +97,28 @@ Interpretacao esperada:
 - `localhost:8000` no host funciona porque a porta `8000` foi publicada pelo Compose
 - se `postgres` ou `redis` cairem, o worker deixa de renovar heartbeat e o healthcheck dele deve ficar `unhealthy`
 
+Para validar o primeiro fluxo REST do Dia 3:
+
+```powershell
+Invoke-RestMethod -Method Post -Uri "http://localhost:8000/services" -ContentType "application/json" -Body '{"name":"OpenAI","url":"https://openai.com"}' | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Uri "http://localhost:8000/services" | ConvertTo-Json -Depth 6
+Invoke-RestMethod -Uri "http://localhost:8000/services/1" | ConvertTo-Json -Depth 6
+docker compose exec api pytest
+```
+
 ## O que praticar no Dia 2
 
 - `localhost` no host aponta para sua maquina
 - `localhost` dentro do container aponta para o proprio container
 - a API fala com `postgres:5432` e `redis:6379` porque esses sao nomes de servico que viram DNS interno no Compose
 - porta publicada existe para acesso de fora do container
+
+## O que praticar no Dia 3
+
+- modelagem de recurso REST antes de pensar em banco
+- payload valido, payload invalido e status codes
+- escolha do menor endpoint util
+- diferenca entre prototipo em memoria e persistencia real
 
 ## Estrutura atual
 
@@ -128,4 +145,4 @@ uptime-tracker/
 
 ## Proximo passo
 
-Partir para o Dia 3 e desenhar o primeiro endpoint util da API com o runtime local ja confiavel.
+Partir para o Dia 4 e substituir o armazenamento em memoria por persistencia real, guiando a implementacao com testes.
