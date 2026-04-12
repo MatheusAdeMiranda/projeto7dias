@@ -2,61 +2,38 @@ from __future__ import annotations
 
 import os
 import socket
-from threading import Lock
 from urllib.parse import urlparse
 
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
-DEFAULT_DATABASE_URL = "postgresql://postgres:postgres@postgres:5432/uptime"
+from app.db import DEFAULT_DATABASE_URL, get_session
+from app.models import ServiceModel
+from app.schemas import ServiceCreate, ServiceRead
+
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
 DEFAULT_PORTS = {
     "postgresql": 5432,
+    "postgresql+psycopg": 5432,
     "redis": 6379,
 }
 
-
-class ServiceCreate(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    url: HttpUrl
-    expected_status: int = Field(default=200, ge=100, le=599)
-    timeout_seconds: int = Field(default=5, ge=1, le=30)
-    active: bool = True
-
-
-class Service(ServiceCreate):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: int
-
 app = FastAPI(
     title="uptime-tracker API",
-    version="0.1.0",
+    version="0.2.0",
     description=(
-        "API minima dos Dias 2 e 3 para praticar Docker Compose, portas, DNS "
-        "e desenho REST."
+        "API minima dos Dias 2, 3 e 4 para praticar Docker Compose, desenho "
+        "REST e persistencia."
     ),
 )
 
-service_store: list[Service] = []
-next_service_id = 1
-service_store_lock = Lock()
 
-
-def reset_service_store() -> None:
-    global next_service_id
-
-    with service_store_lock:
-        service_store.clear()
-        next_service_id = 1
-
-
-def find_service_or_404(service_id: int) -> Service:
-    with service_store_lock:
-        for service in service_store:
-            if service.id == service_id:
-                return service.model_copy()
+def find_service_or_404(service_id: int, session: Session) -> ServiceModel:
+    service = session.get(ServiceModel, service_id)
+    if service is not None:
+        return service
 
     raise HTTPException(
         status_code=status.HTTP_404_NOT_FOUND,
@@ -90,34 +67,36 @@ def probe_tcp(connection_url: str, timeout: float = 1.0) -> dict[str, object]:
 def read_root() -> dict[str, str]:
     return {
         "service": "uptime-tracker-api",
-        "message": "API inicial dos Dias 2 e 3",
+        "message": "API inicial dos Dias 2, 3 e 4",
         "docs": "/docs",
         "health": "/health",
         "services": "/services",
     }
 
 
-@app.post("/services", response_model=Service, status_code=status.HTTP_201_CREATED)
-def create_service(payload: ServiceCreate) -> Service:
-    global next_service_id
-
-    with service_store_lock:
-        service = Service(id=next_service_id, **payload.model_dump())
-        service_store.append(service)
-        next_service_id += 1
-
+@app.post("/services", response_model=ServiceRead, status_code=status.HTTP_201_CREATED)
+def create_service(
+    payload: ServiceCreate,
+    session: Session = Depends(get_session),
+) -> ServiceModel:
+    service = ServiceModel(**payload.model_dump(mode="json"))
+    session.add(service)
+    session.commit()
+    session.refresh(service)
     return service
 
 
-@app.get("/services", response_model=list[Service])
-def list_services() -> list[Service]:
-    with service_store_lock:
-        return [service.model_copy() for service in service_store]
+@app.get("/services", response_model=list[ServiceRead])
+def list_services(session: Session = Depends(get_session)) -> list[ServiceModel]:
+    return list(session.scalars(select(ServiceModel).order_by(ServiceModel.id)))
 
 
-@app.get("/services/{service_id}", response_model=Service)
-def get_service(service_id: int) -> Service:
-    return find_service_or_404(service_id)
+@app.get("/services/{service_id}", response_model=ServiceRead)
+def get_service(
+    service_id: int,
+    session: Session = Depends(get_session),
+) -> ServiceModel:
+    return find_service_or_404(service_id, session)
 
 
 @app.get("/health")

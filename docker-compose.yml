@@ -2,7 +2,9 @@ services:
   api:
     build:
       context: ./api
-    command: uvicorn app.main:app --host ${API_HOST:-0.0.0.0} --port ${API_PORT:-8000} --reload
+    command: >
+      sh -c "alembic -c alembic.ini upgrade head &&
+      uvicorn app.main:app --host ${API_HOST:-0.0.0.0} --port ${API_PORT:-8000} --reload"
     env_file:
       - .env
     volumes:
