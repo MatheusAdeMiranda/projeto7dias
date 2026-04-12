@@ -33,10 +33,12 @@ O primeiro recorte do projeto deve ser pequeno e util:
 
 ## Estado atual
 
-Dia 3 iniciado sobre a base estavel do Dia 2:
+Dia 4 iniciado sobre a base estavel dos Dias 2 e 3:
 
-- `api` sobe com FastAPI e expone `/`, `/health`, `POST /services`, `GET /services` e `GET /services/{id}`
-- `services` usa armazenamento em memoria por enquanto para focar no contrato REST antes da persistencia do Dia 4
+- `api` sobe com FastAPI e expoe `/`, `/health`, `POST /services`, `GET /services` e `GET /services/{id}`
+- `services` agora persiste no PostgreSQL usando SQLAlchemy
+- a migration inicial e gerenciada com Alembic
+- os testes da API usam SQLite isolado para manter velocidade e previsibilidade
 - `postgres` e `redis` sobem com healthchecks proprios
 - `worker` valida conectividade com `postgres` e `redis` e grava heartbeat
 - `docker-compose.yml` publica as portas do host e conecta tudo pela rede interna padrao
@@ -64,8 +66,9 @@ Depois disso:
 - API: `http://localhost:8000`
 - Healthcheck: `http://localhost:8000/health`
 - Docs do FastAPI: `http://localhost:8000/docs`
+- ao subir a API no Compose, a migration mais recente e aplicada automaticamente no ambiente local
 
-## Como validar o Dia 3
+## Como validar o Dia 4
 
 Use estes comandos para fechar a verificacao objetiva da infraestrutura:
 
@@ -97,13 +100,21 @@ Interpretacao esperada:
 - `localhost:8000` no host funciona porque a porta `8000` foi publicada pelo Compose
 - se `postgres` ou `redis` cairem, o worker deixa de renovar heartbeat e o healthcheck dele deve ficar `unhealthy`
 
-Para validar o primeiro fluxo REST do Dia 3:
+Para validar a migration inicial e o fluxo persistido do Dia 4:
 
 ```powershell
+docker compose up -d --build
 Invoke-RestMethod -Method Post -Uri "http://localhost:8000/services" -ContentType "application/json" -Body '{"name":"OpenAI","url":"https://openai.com"}' | ConvertTo-Json -Depth 6
 Invoke-RestMethod -Uri "http://localhost:8000/services" | ConvertTo-Json -Depth 6
 Invoke-RestMethod -Uri "http://localhost:8000/services/1" | ConvertTo-Json -Depth 6
-docker compose exec api pytest
+docker compose exec api python -m pytest -q
+docker compose exec postgres psql -U postgres -d uptime -c "select * from services;"
+```
+
+Se quiser reaplicar manualmente por estudo ou debug:
+
+```powershell
+docker compose exec api alembic -c alembic.ini upgrade head
 ```
 
 ## O que praticar no Dia 2
@@ -120,6 +131,13 @@ docker compose exec api pytest
 - escolha do menor endpoint util
 - diferenca entre prototipo em memoria e persistencia real
 
+## O que praticar no Dia 4
+
+- TDD como rede de seguranca antes da persistencia real
+- diferenca entre teste isolado e runtime real
+- sessao de banco, commit, refresh e leitura ordenada
+- migration inicial como parte da evolucao do schema
+
 ## Estrutura atual
 
 ```text
@@ -130,11 +148,19 @@ uptime-tracker/
   .env.example
   docker-compose.yml
   api/
+    alembic.ini
+    alembic/
+      env.py
+      versions/
     Dockerfile
     requirements.txt
     app/
+      db.py
       main.py
+      models.py
+      schemas.py
     tests/
+      conftest.py
   worker/
     Dockerfile
     requirements.txt
@@ -145,4 +171,4 @@ uptime-tracker/
 
 ## Proximo passo
 
-Partir para o Dia 4 e substituir o armazenamento em memoria por persistencia real, guiando a implementacao com testes.
+Partir para o restante do Dia 4 e decidir como organizar a proxima camada de persistencia para checks, mantendo o mesmo nivel de TDD e small releases.
