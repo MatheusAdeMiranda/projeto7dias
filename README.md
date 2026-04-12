@@ -38,7 +38,7 @@ Dia 4 iniciado sobre a base estavel dos Dias 2 e 3:
 - `api` sobe com FastAPI e expoe `/`, `/health`, `POST /services`, `GET /services` e `GET /services/{id}`
 - `services` agora persiste no PostgreSQL usando SQLAlchemy
 - a migration inicial e gerenciada com Alembic
-- os testes da API usam SQLite isolado para manter velocidade e previsibilidade
+- os testes da API usam SQLite isolado e sobem o schema via Alembic para manter velocidade sem descolar do runtime real
 - `postgres` e `redis` sobem com healthchecks proprios
 - `worker` valida conectividade com `postgres` e `redis` e grava heartbeat
 - `docker-compose.yml` publica as portas do host e conecta tudo pela rede interna padrao
@@ -137,6 +137,7 @@ docker compose exec api alembic -c alembic.ini upgrade head
 - diferenca entre teste isolado e runtime real
 - sessao de banco, commit, refresh e leitura ordenada
 - migration inicial como parte da evolucao do schema
+- fixture de teste alinhada com o caminho real de migration
 
 ## Estrutura atual
 
@@ -151,6 +152,7 @@ uptime-tracker/
     alembic.ini
     alembic/
       env.py
+      script.py.mako
       versions/
     Dockerfile
     requirements.txt
@@ -171,4 +173,4 @@ uptime-tracker/
 
 ## Proximo passo
 
-Partir para o restante do Dia 4 e decidir como organizar a proxima camada de persistencia para checks, mantendo o mesmo nivel de TDD e small releases.
+Partir para o Dia 5 e introduzir `CheckResult`, fila e worker de verdade, mantendo o mesmo nivel de TDD e small releases.

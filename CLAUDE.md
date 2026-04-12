@@ -91,7 +91,8 @@ API RESTful para monitoramento de servicos/sites.
 - no Dia 4, `Service` passa a persistir em Postgres via SQLAlchemy e sessao sincrona simples
 - a migration inicial sera gerenciada por Alembic a partir da versao `20260412_01`
 - no ambiente local com Docker Compose, a API aplica `alembic upgrade head` antes de subir o servidor
-- os testes da API usam SQLite isolado com override de dependencia para nao depender do Postgres em cada caso
+- os testes da API usam SQLite isolado com override de dependencia, mas sobem o schema via Alembic para manter aderencia ao runtime real
+- a estrutura do Alembic inclui `script.py.mako` para nao travar a proxima criacao de revision
 - o primeiro recorte persistido cobre criacao, listagem e leitura por id, sem ainda introduzir `CheckResult`
 
 ## Verificacoes atuais
@@ -101,7 +102,7 @@ API RESTful para monitoramento de servicos/sites.
 - dentro do container `api`, `127.0.0.1:5432` nao aponta para o Postgres, reforcando a diferenca entre localhost do container e servico remoto
 - `docker compose exec api alembic -c alembic.ini upgrade head` aplica a migration inicial
 - `docker compose exec postgres psql -U postgres -d uptime -c "\dt"` mostra `services` e `alembic_version`
-- `docker compose exec api python -m pytest -q` passa com testes isolados de criacao, listagem e leitura
+- `docker compose exec api python -m pytest -q` passa com testes isolados de criacao, listagem e leitura usando Alembic no setup
 
 ## Decisoes abertas
 - qual biblioteca de fila usar no worker
