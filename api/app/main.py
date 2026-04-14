@@ -4,16 +4,19 @@ import os
 import socket
 from urllib.parse import urlparse
 
+import redis
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.responses import JSONResponse
+from rq import Queue
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import DEFAULT_DATABASE_URL, get_session
-from app.models import ServiceModel
-from app.schemas import ServiceCreate, ServiceRead
+from app.models import CheckResultModel, ServiceModel
+from app.schemas import CheckResultRead, ServiceCreate, ServiceRead
 
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
+CHECK_QUEUE_NAME = "checks"
 DEFAULT_PORTS = {
     "postgresql": 5432,
     "postgresql+psycopg": 5432,
@@ -22,12 +25,20 @@ DEFAULT_PORTS = {
 
 app = FastAPI(
     title="uptime-tracker API",
-    version="0.2.0",
+    version="0.3.0",
     description=(
-        "API minima dos Dias 2, 3 e 4 para praticar Docker Compose, desenho "
-        "REST e persistencia."
+        "API dos Dias 2-5 para praticar Docker Compose, desenho REST, "
+        "persistencia e fila assincrona."
     ),
 )
+
+_redis_conn: redis.Redis = redis.from_url(
+    os.getenv("REDIS_URL", DEFAULT_REDIS_URL)
+)
+
+
+def get_queue() -> Queue:
+    return Queue(CHECK_QUEUE_NAME, connection=_redis_conn)
 
 
 def find_service_or_404(service_id: int, session: Session) -> ServiceModel:
@@ -67,7 +78,7 @@ def probe_tcp(connection_url: str, timeout: float = 1.0) -> dict[str, object]:
 def read_root() -> dict[str, str]:
     return {
         "service": "uptime-tracker-api",
-        "message": "API inicial dos Dias 2, 3 e 4",
+        "message": "API de monitoramento de servicos",
         "docs": "/docs",
         "health": "/health",
         "services": "/services",
@@ -97,6 +108,35 @@ def get_service(
     session: Session = Depends(get_session),
 ) -> ServiceModel:
     return find_service_or_404(service_id, session)
+
+
+@app.post(
+    "/services/{service_id}/checks",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_check(
+    service_id: int,
+    session: Session = Depends(get_session),
+    queue: Queue = Depends(get_queue),
+) -> dict[str, object]:
+    find_service_or_404(service_id, session)
+    job = queue.enqueue("app.jobs.run_check", service_id)
+    return {"queued": True, "job_id": job.id, "service_id": service_id}
+
+
+@app.get("/services/{service_id}/checks", response_model=list[CheckResultRead])
+def list_checks(
+    service_id: int,
+    session: Session = Depends(get_session),
+) -> list[CheckResultModel]:
+    find_service_or_404(service_id, session)
+    return list(
+        session.scalars(
+            select(CheckResultModel)
+            .where(CheckResultModel.service_id == service_id)
+            .order_by(CheckResultModel.checked_at.desc())
+        )
+    )
 
 
 @app.get("/health")
