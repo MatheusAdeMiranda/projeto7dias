@@ -85,7 +85,6 @@ API RESTful para monitoramento de servicos/sites.
 - POSTGRES_PASSWORD
 - POSTGRES_PORT
 - REDIS_PORT
-- WORKER_CHECK_INTERVAL
 
 ## Decisoes
 - o projeto sera construido em etapas pequenas e verificaveis
@@ -95,7 +94,7 @@ API RESTful para monitoramento de servicos/sites.
 - o Compose usara os nomes `postgres` e `redis` como DNS interno entre containers
 - o arquivo `.env.example` e apenas template; o runtime local usa `.env`
 - o healthcheck da API validara a conectividade TCP com postgres e redis
-- o healthcheck do worker sera baseado em heartbeat local renovado apenas quando postgres e redis estiverem acessiveis
+- o healthcheck do worker e baseado em heartbeat local renovado por uma thread daemon enquanto o processo do worker estiver vivo (independente da disponibilidade de postgres/redis, ja que o RQ Worker bloqueia em `work()` e gerencia reconexao com o Redis internamente)
 - no Dia 3, `Service` ficou em memoria para focar em recurso REST, contrato HTTP e validacao antes da persistencia real
 - no Dia 4, `Service` passa a persistir em Postgres via SQLAlchemy e sessao sincrona simples
 - a migration inicial sera gerenciada por Alembic a partir da versao `20260412_01`
@@ -123,6 +122,10 @@ API RESTful para monitoramento de servicos/sites.
 - autenticar API
 - rate limiting
 - dashboard
+- retry de jobs no worker (RQ suporta via `Retry(max=...)` mas nao foi habilitado no Dia 5)
+- idempotencia: hoje `POST /services/{id}/checks` chamado duas vezes seguidas enfileira dois jobs e gera dois `CheckResult`. Sem chave de deduplicacao
+- modelos `Service`/`CheckResult` duplicados entre `api/` e `worker/` por nao haver pacote compartilhado; mudancas no schema precisam ser replicadas em ambos
+- conexao do worker com Postgres recriada por job (correto para o modelo de fork do RQ, mas custa overhead em volume alto)
 
 ## Observacoes de ambiente
 - o repositorio foi iniciado no Windows para destravar o Dia 1
