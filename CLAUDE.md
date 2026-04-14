@@ -20,12 +20,11 @@ API RESTful para monitoramento de servicos/sites.
 - Dia 1 concluido com repositorio e documentacao viva
 - Dia 2 concluido com arquitetura local executavel via Docker Compose
 - Dia 3 concluido com desenho REST do recurso `Service`
-- Dia 4 iniciado com persistencia real para `Service`
-- API inicial exposta com `/`, `/health`, `POST /services`, `GET /services` e `GET /services/{id}`
-- worker inicial faz probes de conectividade e grava heartbeat para healthcheck
-- Dia 2 validado em runtime com containers saudaveis e acesso confirmado pelo host
-- Dia 3 validado com contrato HTTP inicial e testes da API
-- Dia 4 validado com migration inicial, persistencia em Postgres e testes isolados da API
+- Dia 4 concluido com persistencia real para `Service` via SQLAlchemy e Alembic
+- Dia 5 concluido com fila assincrona via RQ/Redis, worker executando jobs e modelo `CheckResult`
+- API exposta com `/`, `/health`, `POST /services`, `GET /services`, `GET /services/{id}`, `POST /services/{id}/checks`, `GET /services/{id}/checks`
+- Worker consome fila `checks`, faz request HTTP com httpx e grava resultado no Postgres
+- Fluxo ponta a ponta validado em runtime: job enfileirado pela API, consumido pelo worker, resultado persistido e consultavel pela API
 
 ## Portas
 - api: 8000
@@ -55,8 +54,10 @@ API RESTful para monitoramento de servicos/sites.
 - `POST /services`
 - `GET /services`
 - `GET /services/{id}`
+- `POST /services/{id}/checks` — enfileira checagem, retorna 202 Accepted
+- `GET /services/{id}/checks` — lista historico de checagens ordenado por data desc
 
-## Modelo inicial
+## Modelos
 - `Service`
   - id
   - name
@@ -64,6 +65,14 @@ API RESTful para monitoramento de servicos/sites.
   - expected_status
   - timeout_seconds
   - active
+- `CheckResult`
+  - id
+  - service_id (FK -> services.id, CASCADE)
+  - status (ok | error | timeout)
+  - response_time_ms (nullable)
+  - http_status_code (nullable)
+  - checked_at (timezone-aware)
+  - error_message (nullable)
 
 ## Variaveis de ambiente
 - APP_ENV
@@ -100,15 +109,15 @@ API RESTful para monitoramento de servicos/sites.
 - o host acessa a API por `http://localhost:8000/health`
 - dentro do container `api`, `postgres` e `redis` resolvem por DNS interno do Compose
 - dentro do container `api`, `127.0.0.1:5432` nao aponta para o Postgres, reforcando a diferenca entre localhost do container e servico remoto
-- `docker compose exec api alembic -c alembic.ini upgrade head` aplica a migration inicial
-- `docker compose exec postgres psql -U postgres -d uptime -c "\dt"` mostra `services` e `alembic_version`
-- `docker compose exec api python -m pytest -q` passa com testes isolados de criacao, listagem e leitura usando Alembic no setup
+- `docker compose exec api alembic -c alembic.ini upgrade head` aplica as duas migrations (services e check_results)
+- `docker compose exec postgres psql -U postgres -d uptime -c "\dt"` mostra `services`, `check_results` e `alembic_version`
+- `docker compose exec api python -m pytest -q` passa com 10 testes (services + checks)
+- `POST /services/{id}/checks` retorna 202, enfileira job no Redis e o worker consome e persiste resultado
 
 ## Decisoes abertas
-- qual biblioteca de fila usar no worker
-- qual ORM ou camada de acesso a dados usar
-- como vamos modelar e persistir `CheckResult`
-- se a estrutura de repositorio vai precisar de uma camada de repositorio/servico antes do Dia 5
+- se a estrutura de repositorio vai precisar de uma camada de repositorio/servico
+- como comparar `http_status_code` com `expected_status` e atualizar status do servico
+- se vale expor status atual do servico no `GET /services/{id}`
 
 ## Dividas tecnicas
 - autenticar API
