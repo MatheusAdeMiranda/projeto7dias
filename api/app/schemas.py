@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
@@ -15,3 +17,15 @@ class ServiceRead(ServiceCreate):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+
+
+class CheckResultRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    service_id: int
+    status: str
+    response_time_ms: int | None
+    http_status_code: int | None
+    checked_at: datetime
+    error_message: str | None
