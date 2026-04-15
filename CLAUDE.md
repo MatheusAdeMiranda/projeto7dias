@@ -26,8 +26,9 @@ API RESTful para monitoramento de servicos/sites.
 - API exposta com `/`, `/health`, `POST /services`, `GET /services`, `GET /services/{id}`, `POST /services/{id}/checks`, `GET /services/{id}/checks`
 - Worker consome fila `checks`, faz request HTTP com httpx e grava resultado no Postgres
 - Fluxo ponta a ponta validado em runtime: job enfileirado pela API, consumido pelo worker, resultado persistido e consultavel pela API
-- `ruff check .` rodando limpo em toda a arvore (config em `pyproject.toml` na raiz)
-- CI em `.github/workflows/ci.yml` roda lint + pytest em todo push e PR
+- `ruff check .` e `ruff format --check .` rodando limpos (config em `pyproject.toml` na raiz)
+- CI em `.github/workflows/ci.yml` roda lint + format-check + pytest em todo push e PR
+- `connectivity.py` coberto por testes unitarios dedicados (`resolve_host_port`, `probe_tcp`)
 
 ## Portas
 - api: 8000
@@ -120,7 +121,7 @@ API RESTful para monitoramento de servicos/sites.
 - dentro do container `api`, `127.0.0.1:5432` nao aponta para o Postgres, reforcando a diferenca entre localhost do container e servico remoto
 - `docker compose exec api alembic -c alembic.ini upgrade head` aplica as duas migrations (services e check_results)
 - `docker compose exec postgres psql -U postgres -d uptime -c "\dt"` mostra `services`, `check_results` e `alembic_version`
-- `docker compose exec api python -m pytest -q` passa com 10 testes (services + checks)
+- `docker compose exec api python -m pytest -q` passa com 18 testes (services + checks + connectivity)
 - `POST /services/{id}/checks` retorna 202, enfileira job no Redis e o worker consome e persiste resultado
 
 ## Decisoes abertas
