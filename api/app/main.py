@@ -26,9 +26,7 @@ app = FastAPI(
     ),
 )
 
-_redis_conn: redis.Redis = redis.from_url(
-    os.getenv("REDIS_URL", DEFAULT_REDIS_URL)
-)
+_redis_conn: redis.Redis = redis.from_url(os.getenv("REDIS_URL", DEFAULT_REDIS_URL))
 
 
 def get_queue() -> Queue:
@@ -120,9 +118,7 @@ def read_health() -> JSONResponse:
         "postgres": probe_tcp(database_url),
         "redis": probe_tcp(redis_url),
     }
-    all_dependencies_ready = all(
-        dependency["reachable"] for dependency in dependencies.values()
-    )
+    all_dependencies_ready = all(dependency["reachable"] for dependency in dependencies.values())
 
     payload = {
         "status": "ok" if all_dependencies_ready else "degraded",
@@ -140,9 +136,7 @@ def read_health() -> JSONResponse:
 
     return JSONResponse(
         status_code=(
-            status.HTTP_200_OK
-            if all_dependencies_ready
-            else status.HTTP_503_SERVICE_UNAVAILABLE
+            status.HTTP_200_OK if all_dependencies_ready else status.HTTP_503_SERVICE_UNAVAILABLE
         ),
         content=payload,
     )
