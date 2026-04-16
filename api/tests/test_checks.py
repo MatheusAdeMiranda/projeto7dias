@@ -2,11 +2,10 @@ from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
-from fastapi.testclient import TestClient
-
 from app.db import get_session
 from app.main import get_queue
 from app.models import CheckResultModel
+from fastapi.testclient import TestClient
 
 
 @pytest.fixture()

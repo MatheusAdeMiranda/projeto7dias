@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import os
-import socket
-from urllib.parse import urlparse
 
 import redis
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -11,17 +9,13 @@ from rq import Queue
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.connectivity import probe_tcp
 from app.db import DEFAULT_DATABASE_URL, get_session
 from app.models import CheckResultModel, ServiceModel
 from app.schemas import CheckResultRead, ServiceCreate, ServiceRead
 
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
 CHECK_QUEUE_NAME = "checks"
-DEFAULT_PORTS = {
-    "postgresql": 5432,
-    "postgresql+psycopg": 5432,
-    "redis": 6379,
-}
 
 app = FastAPI(
     title="uptime-tracker API",
@@ -32,9 +26,7 @@ app = FastAPI(
     ),
 )
 
-_redis_conn: redis.Redis = redis.from_url(
-    os.getenv("REDIS_URL", DEFAULT_REDIS_URL)
-)
+_redis_conn: redis.Redis = redis.from_url(os.getenv("REDIS_URL", DEFAULT_REDIS_URL))
 
 
 def get_queue() -> Queue:
@@ -50,28 +42,6 @@ def find_service_or_404(service_id: int, session: Session) -> ServiceModel:
         status_code=status.HTTP_404_NOT_FOUND,
         detail=f"Service {service_id} not found",
     )
-
-
-def resolve_host_port(connection_url: str) -> tuple[str, int]:
-    parsed = urlparse(connection_url)
-    host = parsed.hostname or "localhost"
-    port = parsed.port or DEFAULT_PORTS.get(parsed.scheme, 0)
-    return host, port
-
-
-def probe_tcp(connection_url: str, timeout: float = 1.0) -> dict[str, object]:
-    host, port = resolve_host_port(connection_url)
-
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return {"reachable": True, "host": host, "port": port}
-    except OSError as exc:
-        return {
-            "reachable": False,
-            "host": host,
-            "port": port,
-            "error": str(exc),
-        }
 
 
 @app.get("/")
@@ -148,9 +118,7 @@ def read_health() -> JSONResponse:
         "postgres": probe_tcp(database_url),
         "redis": probe_tcp(redis_url),
     }
-    all_dependencies_ready = all(
-        dependency["reachable"] for dependency in dependencies.values()
-    )
+    all_dependencies_ready = all(dependency["reachable"] for dependency in dependencies.values())
 
     payload = {
         "status": "ok" if all_dependencies_ready else "degraded",
@@ -168,9 +136,7 @@ def read_health() -> JSONResponse:
 
     return JSONResponse(
         status_code=(
-            status.HTTP_200_OK
-            if all_dependencies_ready
-            else status.HTTP_503_SERVICE_UNAVAILABLE
+            status.HTTP_200_OK if all_dependencies_ready else status.HTTP_503_SERVICE_UNAVAILABLE
         ),
         content=payload,
     )

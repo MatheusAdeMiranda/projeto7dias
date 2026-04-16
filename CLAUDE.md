@@ -22,9 +22,13 @@ API RESTful para monitoramento de servicos/sites.
 - Dia 3 concluido com desenho REST do recurso `Service`
 - Dia 4 concluido com persistencia real para `Service` via SQLAlchemy e Alembic
 - Dia 5 concluido com fila assincrona via RQ/Redis, worker executando jobs e modelo `CheckResult`
+- Dia 6 concluido com lint (ruff), refactor de connectivity helpers e pipeline de CI no GitHub Actions
 - API exposta com `/`, `/health`, `POST /services`, `GET /services`, `GET /services/{id}`, `POST /services/{id}/checks`, `GET /services/{id}/checks`
 - Worker consome fila `checks`, faz request HTTP com httpx e grava resultado no Postgres
 - Fluxo ponta a ponta validado em runtime: job enfileirado pela API, consumido pelo worker, resultado persistido e consultavel pela API
+- `ruff check .` e `ruff format --check .` rodando limpos (config em `pyproject.toml` na raiz)
+- CI em `.github/workflows/ci.yml` roda lint + format-check + pytest em todo push e PR
+- `connectivity.py` coberto por testes unitarios dedicados (`resolve_host_port`, `probe_tcp`)
 
 ## Portas
 - api: 8000
@@ -103,6 +107,13 @@ API RESTful para monitoramento de servicos/sites.
 - a estrutura do Alembic inclui `script.py.mako` para nao travar a proxima criacao de revision
 - o primeiro recorte persistido cobre criacao, listagem e leitura por id, sem ainda introduzir `CheckResult`
 
+## Modulos da API
+- `app/main.py`: FastAPI app, rotas e dependencias
+- `app/db.py`: engine e sessao do SQLAlchemy
+- `app/models.py`: `ServiceModel`, `CheckResultModel`
+- `app/schemas.py`: contratos Pydantic de entrada/saida
+- `app/connectivity.py`: helpers TCP (`probe_tcp`, `resolve_host_port`) usados pelo `/health`
+
 ## Verificacoes atuais
 - `docker compose ps` mostra `api`, `postgres`, `redis` e `worker` como `healthy`
 - o host acessa a API por `http://localhost:8000/health`
@@ -110,7 +121,7 @@ API RESTful para monitoramento de servicos/sites.
 - dentro do container `api`, `127.0.0.1:5432` nao aponta para o Postgres, reforcando a diferenca entre localhost do container e servico remoto
 - `docker compose exec api alembic -c alembic.ini upgrade head` aplica as duas migrations (services e check_results)
 - `docker compose exec postgres psql -U postgres -d uptime -c "\dt"` mostra `services`, `check_results` e `alembic_version`
-- `docker compose exec api python -m pytest -q` passa com 10 testes (services + checks)
+- `docker compose exec api python -m pytest -q` passa com 18 testes (services + checks + connectivity)
 - `POST /services/{id}/checks` retorna 202, enfileira job no Redis e o worker consome e persiste resultado
 
 ## Decisoes abertas
