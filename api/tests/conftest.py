@@ -3,11 +3,10 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
-from fastapi.testclient import TestClient
-from sqlalchemy.orm import sessionmaker
-
 from app.db import create_db_engine, get_session
 from app.main import app
+from fastapi.testclient import TestClient
+from sqlalchemy.orm import sessionmaker
 
 
 @pytest.fixture()

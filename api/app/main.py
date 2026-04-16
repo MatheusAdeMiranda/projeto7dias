@@ -1,33 +1,45 @@
 from __future__ import annotations
 
+import logging
 import os
-import socket
-from urllib.parse import urlparse
 
-from fastapi import Depends, FastAPI, HTTPException, status
+import redis
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
+from rq import Queue
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.connectivity import probe_tcp
 from app.db import DEFAULT_DATABASE_URL, get_session
-from app.models import ServiceModel
-from app.schemas import ServiceCreate, ServiceRead
+from app.models import CheckResultModel, ServiceModel
+from app.schemas import CheckResultRead, ServiceCreate, ServiceRead
 
 DEFAULT_REDIS_URL = "redis://redis:6379/0"
-DEFAULT_PORTS = {
-    "postgresql": 5432,
-    "postgresql+psycopg": 5432,
-    "redis": 6379,
-}
+CHECK_QUEUE_NAME = "checks"
 
 app = FastAPI(
     title="uptime-tracker API",
-    version="0.2.0",
-    description=(
-        "API minima dos Dias 2, 3 e 4 para praticar Docker Compose, desenho "
-        "REST e persistencia."
-    ),
+    version="0.7.0",
+    description="API RESTful de monitoramento de servicos/sites.",
 )
+
+logger = logging.getLogger(__name__)
+
+_redis_conn: redis.Redis = redis.from_url(os.getenv("REDIS_URL", DEFAULT_REDIS_URL))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "internal server error"},
+    )
+
+
+def get_queue() -> Queue:
+    return Queue(CHECK_QUEUE_NAME, connection=_redis_conn)
 
 
 def find_service_or_404(service_id: int, session: Session) -> ServiceModel:
@@ -41,33 +53,11 @@ def find_service_or_404(service_id: int, session: Session) -> ServiceModel:
     )
 
 
-def resolve_host_port(connection_url: str) -> tuple[str, int]:
-    parsed = urlparse(connection_url)
-    host = parsed.hostname or "localhost"
-    port = parsed.port or DEFAULT_PORTS.get(parsed.scheme, 0)
-    return host, port
-
-
-def probe_tcp(connection_url: str, timeout: float = 1.0) -> dict[str, object]:
-    host, port = resolve_host_port(connection_url)
-
-    try:
-        with socket.create_connection((host, port), timeout=timeout):
-            return {"reachable": True, "host": host, "port": port}
-    except OSError as exc:
-        return {
-            "reachable": False,
-            "host": host,
-            "port": port,
-            "error": str(exc),
-        }
-
-
 @app.get("/")
 def read_root() -> dict[str, str]:
     return {
         "service": "uptime-tracker-api",
-        "message": "API inicial dos Dias 2, 3 e 4",
+        "message": "API de monitoramento de servicos",
         "docs": "/docs",
         "health": "/health",
         "services": "/services",
@@ -99,6 +89,35 @@ def get_service(
     return find_service_or_404(service_id, session)
 
 
+@app.post(
+    "/services/{service_id}/checks",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def trigger_check(
+    service_id: int,
+    session: Session = Depends(get_session),
+    queue: Queue = Depends(get_queue),
+) -> dict[str, object]:
+    find_service_or_404(service_id, session)
+    job = queue.enqueue("app.jobs.run_check", service_id)
+    return {"queued": True, "job_id": job.id, "service_id": service_id}
+
+
+@app.get("/services/{service_id}/checks", response_model=list[CheckResultRead])
+def list_checks(
+    service_id: int,
+    session: Session = Depends(get_session),
+) -> list[CheckResultModel]:
+    find_service_or_404(service_id, session)
+    return list(
+        session.scalars(
+            select(CheckResultModel)
+            .where(CheckResultModel.service_id == service_id)
+            .order_by(CheckResultModel.checked_at.desc())
+        )
+    )
+
+
 @app.get("/health")
 def read_health() -> JSONResponse:
     database_url = os.getenv("DATABASE_URL", DEFAULT_DATABASE_URL)
@@ -108,9 +127,7 @@ def read_health() -> JSONResponse:
         "postgres": probe_tcp(database_url),
         "redis": probe_tcp(redis_url),
     }
-    all_dependencies_ready = all(
-        dependency["reachable"] for dependency in dependencies.values()
-    )
+    all_dependencies_ready = all(dependency["reachable"] for dependency in dependencies.values())
 
     payload = {
         "status": "ok" if all_dependencies_ready else "degraded",
@@ -128,9 +145,7 @@ def read_health() -> JSONResponse:
 
     return JSONResponse(
         status_code=(
-            status.HTTP_200_OK
-            if all_dependencies_ready
-            else status.HTTP_503_SERVICE_UNAVAILABLE
+            status.HTTP_200_OK if all_dependencies_ready else status.HTTP_503_SERVICE_UNAVAILABLE
         ),
         content=payload,
     )
