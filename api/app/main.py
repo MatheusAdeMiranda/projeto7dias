@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import logging
 import os
 
 import redis
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.responses import JSONResponse
 from rq import Queue
 from sqlalchemy import select
@@ -19,14 +20,22 @@ CHECK_QUEUE_NAME = "checks"
 
 app = FastAPI(
     title="uptime-tracker API",
-    version="0.3.0",
-    description=(
-        "API dos Dias 2-5 para praticar Docker Compose, desenho REST, "
-        "persistencia e fila assincrona."
-    ),
+    version="0.7.0",
+    description="API RESTful de monitoramento de servicos/sites.",
 )
 
+logger = logging.getLogger(__name__)
+
 _redis_conn: redis.Redis = redis.from_url(os.getenv("REDIS_URL", DEFAULT_REDIS_URL))
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        content={"detail": "internal server error"},
+    )
 
 
 def get_queue() -> Queue:

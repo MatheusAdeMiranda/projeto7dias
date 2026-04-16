@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import ssl
 from datetime import UTC, datetime
 
@@ -8,6 +9,7 @@ import httpx
 from app.db import make_session_factory
 from app.models import CheckResultModel, ServiceModel
 
+logger = logging.getLogger(__name__)
 _SSL_CONTEXT = ssl.create_default_context()
 
 
@@ -18,11 +20,11 @@ def run_check(service_id: int) -> None:
     with session_factory() as session:
         service = session.get(ServiceModel, service_id)
         if service is None:
-            print(f"[job] service {service_id} not found, skipping", flush=True)
+            logger.warning("service %d not found, skipping", service_id)
             return
 
         if not service.active:
-            print(f"[job] service {service_id} is inactive, skipping", flush=True)
+            logger.info("service %d is inactive, skipping", service_id)
             return
 
         result = _do_http_check(str(service.url), service.timeout_seconds)
@@ -30,10 +32,13 @@ def run_check(service_id: int) -> None:
         session.add(result)
         session.commit()
 
-    print(
-        f"[job] service={service_id} status={result.status} "
-        f"http={result.http_status_code} time={result.response_time_ms}ms",
-        flush=True,
+    logger.info(
+        "service=%d name=%s status=%s http=%s time=%sms",
+        service_id,
+        service.name,
+        result.status,
+        result.http_status_code,
+        result.response_time_ms,
     )
 
 
